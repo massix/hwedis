@@ -1,0 +1,63 @@
+cabal-version:      3.4
+name:               hwedis
+version:            0.1.0.0
+synopsis:           Simple WebSocket relay for Redis
+
+description:
+  Create a WebSocket caching system which will push the 
+  cache elements to clients instead of waiting for miss
+
+license:            MIT
+license-file:       LICENSE
+author:             Massimo Gengarelli
+maintainer:         massimo.gengarelli@gmail.com
+copyright:          2023 Massimo Gengarelli
+category:           Database
+build-type:         Simple
+
+extra-doc-files:
+  CHANGELOG.md
+  , LICENSE
+
+extra-source-files: 
+  flake.nix
+  , flake.lock
+  , .envrc
+
+common warnings
+  ghc-options: -Wall
+
+common config
+  build-depends: 
+    base ^>= 4.17.2.0
+    , websockets ^>= 0.12.7.3
+    , transformers
+    , text
+    , stm
+    , array
+  default-language: Haskell2010
+
+library comm
+  import: warnings, config
+  hs-source-dirs: lib
+  exposed-modules: 
+    Comm.Server
+    , Comm.Client
+
+test-suite hwedis-test
+  import: warnings, config
+  type: exitcode-stdio-1.0
+  main-is: Main.hs
+  hs-source-dirs: test
+  build-depends:
+    tasty ^>= 1.5
+    , tasty-hunit
+    , tasty-expected-failure
+    , hwedis:comm
+
+executable hwedis
+  import: warnings, config
+  main-is: Main.hs
+  hs-source-dirs: app
+  build-depends:
+    hwedis:comm
