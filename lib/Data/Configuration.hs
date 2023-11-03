@@ -57,7 +57,7 @@ configurationCodec =
     .= getRedisPort
 
 instance Defaultable Configuration where
-  getDefault = Configuration "0.0.0.0" 9091 "127.0.0.1" 5432
+  getDefault = Configuration "0.0.0.0" 9091 "127.0.0.1" 6379
 
 readConfiguration :: ConfigurationSource -> IO Configuration
 readConfiguration (FromFile fp) = do
@@ -80,7 +80,7 @@ readConfiguration (FromSQLite _) = undefined
 readConfiguration FromEnvironment = undefined
 
 -- A Monad that allows for the configuration to be injected within another monad
-newtype ConfigurationM m a = ConfigurationM { unConfigurationM :: ReaderT Configuration m a}
+newtype ConfigurationM m a = ConfigurationM { unConfigurationM :: ReaderT Configuration m a }
 
 instance (Monad m) => Functor (ConfigurationM m) where
   fmap :: (a -> b) -> ConfigurationM m a -> ConfigurationM m b
