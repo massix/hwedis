@@ -4,6 +4,12 @@ module Main where
 import Comm.Client (Client (Client), Header (Header), extractUserAgent, key, value)
 import Comm.Server (findNextIndex)
 import Data.Array.IArray (listArray)
+import Data.Configuration (
+  ConfigurationSource (..),
+  getConfiguration,
+  readConfiguration,
+  runConfigurationM, Configuration (getWebserverHost, getWebserverPort), getRedisHost, getRedisPort,
+ )
 import Test.Tasty (defaultMain)
 import Test.Tasty.HUnit (testCase, (@=?), (@?=))
 import Test.Tasty.Runners (TestTree (TestGroup))
@@ -42,6 +48,21 @@ findNextIndexTest = testCase "Find next index" $ do
   let clientsArray = [Client "not-undefined" undefined, Client "undefined" undefined]
   1 @=? findNextIndex (listArray (0, 255) clientsArray)
 
+configurationTest :: TestTree
+configurationTest = testCase "Read configuration" $ do
+  conf <- readConfiguration (FromFile "hwedis.toml")
+  fromMonad <- runConfigurationM conf (do getConfiguration)
+  fromMonad @=? conf
+
+  (redisHost, redisPort) <- runConfigurationM conf (do
+    cnf <- getConfiguration
+    pure (getRedisHost cnf, getRedisPort cnf))
+
+  getWebserverHost conf @?= "0.0.0.0"
+  getWebserverPort conf @?= 9092
+  redisHost @?= "localhost"
+  redisPort @?= 6379
+
 main :: IO ()
 main = defaultMain $ do
   TestGroup
@@ -57,4 +78,7 @@ main = defaultMain $ do
     , TestGroup
         "Server"
         [findNextIndexTest]
+    , TestGroup
+        "Configuration"
+        [configurationTest]
     ]

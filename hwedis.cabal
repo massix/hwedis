@@ -32,9 +32,12 @@ common config
     base ^>= 4.17.2.0
     , websockets ^>= 0.12.7.3
     , transformers
+    , mtl
     , text
     , stm
     , array
+    , katip
+    , tomland
   default-language: Haskell2010
 
 library comm
@@ -43,6 +46,7 @@ library comm
   exposed-modules: 
     Comm.Server
     , Comm.Client
+    , Data.Configuration
 
 test-suite hwedis-test
   import: warnings, config
