@@ -45,8 +45,8 @@ library comm
   import: warnings, config
   hs-source-dirs: lib
   exposed-modules: 
-    Comm.Server
-    , Comm.Client
+    Network.Server
+    , Network.Client
     , Data.Configuration
 
 test-suite hwedis-test

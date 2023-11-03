@@ -2,13 +2,13 @@
 
 module Main where
 
-import Comm.Client (Client (..))
+import Network.Client (Client (..))
 import Control.Concurrent.STM (STM, atomically, newTVar)
 import Data.Array.MArray (newArray)
 import Katip.Core (permitItem, logMsg, runKatipT)
 import Network.WebSockets (runServer)
 import System.IO (stdout)
-import Comm.Server (Environment, MutableIndex, runServerStack, serverApp')
+import Network.Server (Environment, MutableIndex, runServerStack, serverApp')
 import Katip (mkHandleScribe, ColorStrategy (..), Severity (..), Verbosity (..), initLogEnv, registerScribe, defaultScribeSettings)
 import Data.Configuration
     ( readConfiguration,

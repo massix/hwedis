@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module Comm.Client (
+module Network.Client (
   mkClient,
   Client(..),
   getUserAgent,

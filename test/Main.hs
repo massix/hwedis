@@ -3,8 +3,8 @@
 module Main where
 
 --------------------
-import Comm.Client (Client (Client), Header (Header), extractUserAgent, key, value)
-import Comm.Server (Environment, MutableIndex, findNextIndex, runServerStack, serverApp')
+import Network.Client (Client (Client), Header (Header), extractUserAgent, key, value)
+import Network.Server (Environment, MutableIndex, findNextIndex, runServerStack, serverApp')
 import Control.Concurrent (ThreadId, forkIO, throwTo)
 import Control.Concurrent.STM (atomically, newTVarIO)
 import Control.Monad.Reader (MonadReader (ask), ReaderT (runReaderT))

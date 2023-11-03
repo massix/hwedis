@@ -2,7 +2,7 @@
 {-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Comm.Server (
+module Network.Server (
   Environment,
   MutableIndex,
   serverApp',
@@ -12,7 +12,7 @@ module Comm.Server (
 
 -----------------------------------------------------
 
-import Comm.Client (Client (..), getConnection', getUserAgent', mkClient)
+import Network.Client (Client (..), getConnection', getUserAgent', mkClient)
 import Control.Concurrent (forkIO, myThreadId, threadDelay, throwTo)
 import Control.Concurrent.STM (TArray, TVar, writeTVar)
 import Control.Exception (Exception)
