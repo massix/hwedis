@@ -7,6 +7,7 @@ module Comm.Server (
   MutableIndex,
   serverApp',
   runServerStack,
+  findNextIndex,
 ) where
 
 -----------------------------------------------------
@@ -35,7 +36,7 @@ type Environment = TArray Int Client
 -- | Get a reference to the next usable index of the array of clients
 type MutableIndex = TVar Int
 
--- | The ServerContext will contain both
+-- | The ServerContext will contain both the Environment and a Mutable index
 type ServerContext = (Environment, MutableIndex)
 
 data InternalExceptions
@@ -48,17 +49,21 @@ instance Exception InternalExceptions
 newtype ServerM m a = ServerM {unServerM :: ReaderT ServerContext m a}
   deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
 
+-- | This is what defines a Server Monad
 type ServerStack = ServerM (ReaderT ServerContext (KatipT IO))
 
+-- | Run a ServerM monad within a given ServerContext
 runServerM :: ServerContext -> ServerM m a -> m a
 runServerM c m = runReaderT (unServerM m) c
 
+-- | Run a server stack (the full Monad stack)
 runServerStack :: LogEnv -> ServerContext -> ServerStack a -> IO a
 runServerStack le c m = do
   let readerT = runServerM c m
       katipT = runReaderT readerT c
   runKatipT le katipT
 
+-- | Main entry point for the Websocket server
 serverApp' :: PendingConnection -> ServerStack ()
 serverApp' pc = do
   withKatip $ logMsg "hwedis" InfoS "New connection incoming"
