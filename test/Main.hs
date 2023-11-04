@@ -1,11 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE NumericUnderscores #-}
 
 module Main where
 
 --------------------
 import Network.Client (Client (Client), Header (Header), extractUserAgent, key, value)
 import Network.Server (Environment, MutableIndex, findNextIndex, runServerStack, serverApp')
-import Control.Concurrent (ThreadId, forkIO, throwTo)
+import Control.Concurrent (ThreadId, forkIO, throwTo, threadDelay)
 import Control.Concurrent.STM (atomically, newTVarIO)
 import Control.Monad.Reader (MonadReader (ask), ReaderT (runReaderT))
 import Control.Monad.Trans (lift)
@@ -106,6 +107,8 @@ serverTest = testCase "Test Server" $ do
       $ \pc -> runServerStack le (ctx, idx) $ do
         lift $ lift $ logMsg "main" DebugS "Starting webserver"
         serverApp' pc
+
+  threadDelay 2_000_000
 
   -- Collect messages on a dedicated thread
   res <- T.forkIO $ do
