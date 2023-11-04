@@ -27,6 +27,7 @@ import System.IO (stdout)
 import Test.Tasty (defaultMain)
 import Test.Tasty.HUnit (testCase, (@=?), (@?=))
 import Test.Tasty.Runners (TestTree (TestGroup))
+import qualified Control.Concurrent.Thread as T
 
 -------------------
 headers :: [Header]
@@ -106,11 +107,31 @@ serverTest = testCase "Test Server" $ do
         lift $ lift $ logMsg "main" DebugS "Starting webserver"
         serverApp' pc
 
+  -- Collect messages on a dedicated thread
+  res <- T.forkIO $ do
+    runClientWith serverHost serverPort "/" defaultConnectionOptions [("User-Agent", "Test")] $ \conn -> do
+      runFakeClient (undefined, conn) le msgCollector
+
   -- Connect to the server
   runClientWith serverHost serverPort "/" defaultConnectionOptions [("User-Agent", "Test")] $ \conn -> do
     runFakeClient (threadId, conn) le mainClient
 
+  -- Gather the results
+  msgs <- snd res >>= T.result
+  length msgs @?= 1
+  head msgs @?= DataMessage False False False (Text "Hello World" Nothing)
+
  where
+  msgCollector :: FakeClientM [Message]
+  msgCollector = do
+    ctx <- ask
+    let conn = snd ctx
+
+    liftKatip $ logMsg "collector" DebugS "Collecting messages"
+    msg <- liftIO $ receive conn
+    liftKatip $ logMsg "collector" DebugS "Received message"
+    return [msg]
+
   mainClient :: FakeClientM ()
   mainClient = do
     ctx <- ask
