@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "haskell",
+      "request": "launch",
+      "name": "Cabal Test",
+      "workspace": "${workspaceFolder}",
+      "stopOnEntry": true,
+      "startupFunc": "main",
+      "startup": "${workspaceFolder}/test/Main.hs",
+      "logFile": "${workspaceFolder}/log.log",
+      "logLevel": "WARNING",
+      "forceInspect": false,
+      "ghciEnv": {},
+      "ghciPrompt": "λ: ",
+      "ghciInitialPrompt": "λ: ",
+      "ghciCmd": "cabal exec -- ghci-dap --interactive -i${workspaceFolder}"
+    }
+  ]
+}

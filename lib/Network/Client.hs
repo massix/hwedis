@@ -68,7 +68,7 @@ value (Header (_, v)) = v
 -- Nothing
 --
 -- >>> extractUserAgent [Header("x-some-header", "useless"), Header("user-agent", "Firefox")]
--- Just "user-agent": "Firefox"
+-- Just user-agent: Firefox
 extractUserAgent :: [Header] -> Maybe Header
 extractUserAgent = toMaybe . filter ((== userAgent) . key)
  where

@@ -1,25 +1,25 @@
-cabal-version:      3.4
-name:               hwedis
-version:            0.1.0.0
-synopsis:           Simple WebSocket relay for Redis
+cabal-version: 3.4
+name: hwedis
+version: 0.1.0.0
+synopsis: Simple WebSocket relay for Redis
 
 description:
   Create a WebSocket caching system which will push the 
   cache elements to clients instead of waiting for miss
 
-license:            MIT
-license-file:       LICENSE
-author:             Massimo Gengarelli
-maintainer:         massimo.gengarelli@gmail.com
-copyright:          2023 Massimo Gengarelli
-category:           Database
-build-type:         Simple
+license: MIT
+license-file: LICENSE
+author: Massimo Gengarelli
+maintainer: massimo.gengarelli@gmail.com
+copyright: 2023 Massimo Gengarelli
+category: Database
+build-type: Simple
 
 extra-doc-files:
   CHANGELOG.md
   , LICENSE
 
-extra-source-files: 
+extra-source-files:
   flake.nix
   , flake.lock
   , .envrc
@@ -39,7 +39,16 @@ common config
     , katip ^>= 0.8.7
     , tomland ^>= 1.3.3
     , threads ^>= 0.5.1
+    , hedis ^>= 0.15.2
+    , bytestring ^>= 0.11.5
+    , duration ^>= 0.2.0
+    , stringsearch ^>= 0.3.6
   default-language: Haskell2010
+  default-extensions:
+    OverloadedStrings
+    InstanceSigs
+    NumericUnderscores
+    LambdaCase
 
 library comm
   import: warnings, config
@@ -47,17 +56,23 @@ library comm
   exposed-modules: 
     Network.Server
     , Network.Client
+    , Network.Redis
     , Data.Configuration
+    , Data.Messages
 
 test-suite hwedis-test
   import: warnings, config
   type: exitcode-stdio-1.0
   main-is: Main.hs
+  other-modules:
+    TestMessages
+    , RedisTest
   hs-source-dirs: test
   build-depends:
-    tasty ^>= 1.5
-    , tasty-hunit
-    , tasty-expected-failure
+    tasty ^>= 1.4
+    , tasty-hunit ^>= 0.10.1
+    , tasty-expected-failure ^>= 0.12.3
+    , testcontainers ^>= 0.5.0
     , hwedis:comm
 
 executable hwedis
