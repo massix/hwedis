@@ -18,4 +18,4 @@ jobs:
       with:
         ghc-version: "9.4.7"
         cabal-version: "3.10.1.0"
-    - run: cabal test
+    - run: cabal test --test-show-details=direct
