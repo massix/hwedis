@@ -78,7 +78,7 @@ getServerContext = lift ask
 -- | Main entry point for the Websocket server
 serverApp' :: WS.PendingConnection -> ServerStack ()
 serverApp' pc = do
-  liftKatip $ K.logMsg "hwedis" K.InfoS "New connection incoming"
+  liftKatip $ K.logMsg "hwedis" K.DebugS "New connection incoming"
   client <- liftIO $ runMaybeT (C.mkClient pc)
 
   -- Needed for forking threads
@@ -113,7 +113,7 @@ serverApp' pc = do
         pure False
       Just m -> case m of
         WS.ControlMessage (WS.Close _ bs) -> do
-          liftKatip $ K.logMsg "talk" K.DebugS "Received close message"
+          liftKatip $ K.logMsg "talk" K.WarningS "Received close message"
           liftIO $ WS.sendClose conn bs
 
           -- Remove the client from the array
@@ -141,7 +141,7 @@ serverApp' pc = do
           liftKatip $ K.logMsg "talk" K.InfoS "Received binary message"
           pure True
 
-    liftKatip $ K.logMsg "talk" K.DebugS $ K.ls (if shouldRun then "Continuing" else "Stopping" ++ " execution")
+    liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ (if shouldRun then "Continuing" else "Stopping") ++ " execution"
     talk conn idx shouldRun
 
   handleMessage :: WS.Message -> ServerStack M.Response
@@ -196,7 +196,7 @@ serverApp' pc = do
     (environment, _, _) <- getServerContext
     clients <- liftIO $ atomically $ getElems environment
     let connected = filter ((/= "undefined") . C.getUserAgent') clients
-    liftKatip $ K.logMsg "broadcast" K.InfoS $ K.ls $ "Broadcasting to " ++ show (length connected) ++ " clients"
+    liftKatip $ K.logMsg "broadcast" K.DebugS $ K.ls $ "Broadcasting to " ++ show (length connected) ++ " clients"
     traverse_ (\c -> liftIO $ WS.send (C.getConnection' c) msg) connected
 
 -- | Given an array of clients, find the next usable index (recycle)
