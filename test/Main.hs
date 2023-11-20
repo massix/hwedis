@@ -7,12 +7,10 @@ module Main where
 --------------------
 
 import Control.Concurrent (forkIO, threadDelay)
-import Control.Concurrent.STM (atomically, newTVarIO)
+import Control.Concurrent.STM (newTVarIO)
 import qualified Control.Concurrent.Thread as T
 import Control.Monad.Reader (MonadReader (ask), ReaderT (runReaderT))
 import Control.Monad.Trans (lift)
-import Data.Array.IArray (listArray)
-import Data.Array.MArray (MArray (newArray))
 import Data.Configuration (
   Configuration (getWebserverHost, getWebserverPort),
   ConfigurationSource (..),
@@ -37,8 +35,8 @@ import Katip (
   registerScribe,
   runKatipT,
  )
-import Network.Client (Client (Client), Header (Header), extractUserAgent, key, value)
-import Network.Server (Environment, MutableIndex, findNextIndex, runServerStack, serverApp')
+import Network.Client (Header (Header), extractUserAgent, key, value)
+import Network.Server (runServerStack, serverApp')
 import Network.WebSockets (
   Connection,
   ControlMessage (..),
@@ -87,11 +85,6 @@ showHeaderTest :: TestTree
 showHeaderTest = testCase "Show header" $ do
   show (Header ("USER-AGENT", "rAnDoMCasE")) @?= "USER-AGENT: rAnDoMCasE"
 
-findNextIndexTest :: TestTree
-findNextIndexTest = testCase "Find next index" $ do
-  let clientsArray = [Client "not-undefined" undefined, Client "undefined" undefined]
-  1 @=? findNextIndex (listArray (0, 255) clientsArray)
-
 configurationTest :: TestTree
 configurationTest = testCase "Read configuration" $ do
   conf <- readConfiguration (FromFile "hwedis.toml")
@@ -122,8 +115,7 @@ serverTest = testCase "Test Server" $ do
   let serverHost = "127.0.0.1"
       serverPort = 9999
 
-  ctx <- atomically $ newArray (0, 20) (Client "undefined" undefined) :: IO Environment
-  idx <- newTVarIO 0 :: IO MutableIndex
+  ctx <- newTVarIO []
   handleScribe <- mkHandleScribe (ColorLog True) stdout (permitItem ErrorS) V1
   le <- initLogEnv "hwedis" "test" >>= registerScribe "stdout" handleScribe defaultScribeSettings
 
@@ -132,7 +124,7 @@ serverTest = testCase "Test Server" $ do
   -- Run server on a dedicated light thread
   _ <- forkIO $ do
     runServer serverHost serverPort
-      $ \pc -> runServerStack le (ctx, idx, undefined) $ do
+      $ \pc -> runServerStack le (ctx, undefined) $ do
         lift $ lift $ logMsg "main" DebugS "Starting webserver"
         serverApp' pc
 
@@ -191,12 +183,8 @@ main = defaultMain $ do
         , headersValueTest
         , userAgentTest
         , showHeaderTest
-        , findNextIndexTest
         , ignoreTestBecause "Refactoring needed" serverTest
         ]
-    , TestGroup
-        "Server"
-        [findNextIndexTest]
     , TestGroup
         "Configuration"
         [configurationTest]

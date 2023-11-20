@@ -9,7 +9,6 @@ import Control.Concurrent (threadDelay, forkIO)
 import Control.Concurrent.STM (atomically, newTVarIO, writeTVar)
 import Control.Exception (SomeException, try, handle)
 import Control.Monad.Trans (lift, liftIO)
-import Data.Array.MArray (newArray)
 import Data.Configuration (
   Configuration (..), ConfigurationSource (..),
   readConfiguration,
@@ -29,8 +28,7 @@ import Katip (
   registerScribe,
   runKatipT,
  )
-import Network.Client (Client (..))
-import Network.Server (MutableIndex, runServerStack, serverApp')
+import Network.Server (runServerStack, serverApp')
 import Network.WebSockets (runServer)
 import System.IO (stdout)
 import qualified Data.Time.Clock.Duration as D
@@ -48,8 +46,7 @@ type CurrentAttempt = Int
 main :: IO ()
 main = do
   -- Init TVar and TArray
-  ctx <- atomically $ newArray (0, 255) (Client "undefined" undefined)
-  idx <- newTVarIO 0 :: IO MutableIndex
+  clients <- newTVarIO []
 
   -- Init KatipT
   handleScribe <- mkHandleScribe ColorIfTerminal stdout (permitItem InfoS) V1
@@ -73,7 +70,7 @@ main = do
 
   -- Launch the server
   runServer (getWebserverHost conf) (getWebserverPort conf)
-    $ \pc -> runServerStack le (ctx, idx, conn) $ do
+    $ \pc -> runServerStack le (clients, conn) $ do
       lift $ lift $ logMsg "main" DebugS "Starting webserver"
       serverApp' pc
 
