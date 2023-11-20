@@ -13,7 +13,7 @@ module Network.Server (
 
 import Control.Concurrent.STM (TArray, TVar, writeTVar)
 import Control.Exception (Exception)
-import Control.Monad (forever)
+import Control.Monad (when)
 import Control.Monad.Trans (MonadIO, MonadTrans, lift, liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (runMaybeT))
 import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
@@ -29,6 +29,7 @@ import qualified Katip as K
 import qualified Network.Client as C
 import qualified Network.Redis as RT
 import qualified Network.WebSockets as WS
+import Control.Monad.Catch (catch, MonadCatch, MonadThrow)
 
 -----------------------------------------------------
 
@@ -52,7 +53,7 @@ instance Exception InternalExceptions
 
 -- | Server Monad where everything will be running
 newtype ServerM m a = ServerM {unServerM :: ReaderT ServerContext m a}
-  deriving (Functor, Applicative, Monad, MonadTrans, MonadIO)
+  deriving (Functor, Applicative, Monad, MonadTrans, MonadIO, MonadThrow, MonadCatch)
 
 -- | This is what defines a Server Monad
 type ServerStack a = ServerM (ReaderT ServerContext (K.KatipT IO)) a
@@ -77,7 +78,7 @@ getServerContext = lift ask
 -- | Main entry point for the Websocket server
 serverApp' :: WS.PendingConnection -> ServerStack ()
 serverApp' pc = do
-  liftKatip $ K.logMsg "hwedis" K.InfoS "New connection incoming"
+  liftKatip $ K.logMsg "hwedis" K.DebugS "New connection incoming"
   client <- liftIO $ runMaybeT (C.mkClient pc)
 
   -- Needed for forking threads
@@ -93,38 +94,55 @@ serverApp' pc = do
       clients <- liftIO $ atomically $ getElems environment
       liftIO $ atomically $ writeTVar index $ findNextIndex $ listArray (0, 255) clients
 
-      liftIO $ WS.withPingThread conn 30 (pure ()) (runServerStack logEnv env (talk conn currentIndex))
+      liftIO $ WS.withPingThread conn 30 (pure ()) $ runServerStack logEnv env (talk conn currentIndex True)
     Nothing -> liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused"
  where
-  talk :: WS.Connection -> Int -> ServerStack ()
-  talk conn idx = forever $ do
-    msg <- liftIO $ WS.receive conn
+  recv :: WS.Connection -> ServerStack (Maybe WS.Message)
+  recv conn = catch (do msg <- liftIO $ WS.receive conn; pure $ Just msg) 
+                    (\e -> let _ = show (e :: WS.ConnectionException) 
+                           in pure Nothing)
+
+  talk :: WS.Connection -> Int -> Bool -> ServerStack ()
+  talk conn idx run = when run $ do
     (environment, _, _) <- getServerContext
-
-    case msg of
-      WS.ControlMessage (WS.Close _ bs) -> do
-        liftKatip $ K.logMsg "talk" K.DebugS "Received close message"
-        liftIO $ WS.sendClose conn bs
-
-        -- Remove the client from the array
+    msg <- recv conn
+    shouldRun <- case msg of
+      Nothing -> do
+        liftKatip $ K.logMsg "talk" K.ErrorS "Client disconnected abruptly"
         liftIO $ atomically $ writeArray environment idx (C.Client "undefined" undefined)
-        pure mempty
-      -- \^ Stops the thread
-      WS.ControlMessage (WS.Ping content) -> do
-        liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ "Received ping message: " ++ show content
-        liftIO $ WS.send conn (WS.ControlMessage (WS.Pong content))
-      WS.ControlMessage (WS.Pong content) -> do
-        liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ "Received pong message: " ++ show content
-      WS.DataMessage _ _ _ (WS.Text _ _) -> do
-        liftKatip $ K.logMsg "talk" K.DebugS "Received text message"
-        resp <- handleMessage msg
+        pure False
+      Just m -> case m of
+        WS.ControlMessage (WS.Close _ bs) -> do
+          liftKatip $ K.logMsg "talk" K.WarningS "Received close message"
+          liftIO $ WS.sendClose conn bs
 
-        if M.isBroadcastable resp
-          then do
-            broadcast (M.toWsMessage resp)
-          else liftIO $ WS.send conn (M.toWsMessage resp)
-      WS.DataMessage _ _ _ (WS.Binary _) -> do
-        liftKatip $ K.logMsg "talk" K.InfoS "Received binary message"
+          -- Remove the client from the array
+          liftIO $ atomically $ writeArray environment idx (C.Client "undefined" undefined)
+          pure False
+        -- \^ Stops the thread
+        WS.ControlMessage (WS.Ping content) -> do
+          liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ "Received ping message: " ++ show content
+          liftIO $ WS.send conn (WS.ControlMessage (WS.Pong content))
+          pure True
+        WS.ControlMessage (WS.Pong content) -> do
+          liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ "Received pong message: " ++ show content
+          pure True
+        WS.DataMessage _ _ _ (WS.Text _ _) -> do
+          liftKatip $ K.logMsg "talk" K.DebugS "Received text message"
+          resp <- handleMessage m
+
+          if M.isBroadcastable resp
+            then do
+              broadcast (M.toWsMessage resp)
+            else liftIO $ WS.send conn (M.toWsMessage resp)
+
+          pure True
+        WS.DataMessage _ _ _ (WS.Binary _) -> do
+          liftKatip $ K.logMsg "talk" K.InfoS "Received binary message"
+          pure True
+
+    liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ (if shouldRun then "Continuing" else "Stopping") ++ " execution"
+    talk conn idx shouldRun
 
   handleMessage :: WS.Message -> ServerStack M.Response
   handleMessage m = do
@@ -178,7 +196,7 @@ serverApp' pc = do
     (environment, _, _) <- getServerContext
     clients <- liftIO $ atomically $ getElems environment
     let connected = filter ((/= "undefined") . C.getUserAgent') clients
-    liftKatip $ K.logMsg "broadcast" K.InfoS $ K.ls $ "Broadcasting to " ++ show (length connected) ++ " clients"
+    liftKatip $ K.logMsg "broadcast" K.DebugS $ K.ls $ "Broadcasting to " ++ show (length connected) ++ " clients"
     traverse_ (\c -> liftIO $ WS.send (C.getConnection' c) msg) connected
 
 -- | Given an array of clients, find the next usable index (recycle)

@@ -100,7 +100,7 @@ pingRedis = do
 
 newHash :: ByteString -> [(ByteString, ByteString)] -> RedisT ()
 newHash key fields = do
-  liftKatip $ logK K.InfoS $ "Adding key to Redis: " ++ B.unpack key
+  liftKatip $ logK K.DebugS $ "Adding key to Redis: " ++ B.unpack key
   e <- keyExists key
 
   when e $ do
@@ -119,7 +119,7 @@ newHash key fields = do
   handleStatus (R.Status bs) = do
     liftKatip $ logK K.InfoS $ "Received status: " ++ B.unpack bs
     throwError $ B.unpack bs
-  handleStatus R.Ok = liftKatip $ logK K.InfoS "Success"
+  handleStatus R.Ok = liftKatip $ logK K.DebugS "Success"
   handleStatus R.Pong = liftKatip $ logK K.ErrorS "Pong received"
 
 removeHash :: ByteString -> RedisT ()

@@ -74,7 +74,7 @@ main = do
   -- Launch the server
   runServer (getWebserverHost conf) (getWebserverPort conf)
     $ \pc -> runServerStack le (ctx, idx, conn) $ do
-      lift $ lift $ logMsg "main" InfoS "Starting webserver"
+      lift $ lift $ logMsg "main" DebugS "Starting webserver"
       serverApp' pc
 
  where
