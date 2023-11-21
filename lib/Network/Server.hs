@@ -23,7 +23,6 @@ import qualified Data.Messages as M
 import qualified Database.Redis as R
 import GHC.Conc (atomically, readTVarIO)
 import qualified Katip as K
-import Network.Client (Client (Client))
 import qualified Network.Client as C
 import qualified Network.Redis as RT
 import qualified Network.WebSockets as WS
@@ -96,7 +95,7 @@ serverApp' pc = do
       if isAccepted
         then liftIO $ WS.withPingThread conn 30 (pure ()) $ runServerStack logEnv env (talk c True)
         else liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused, duplicated user agent"
-    Nothing -> liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused"
+    Nothing -> liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused, missing user agent"
  where
   recv :: WS.Connection -> ServerStack (Maybe WS.Message)
   recv conn =
@@ -107,20 +106,20 @@ serverApp' pc = do
            in pure Nothing
       )
 
-  talk :: Client -> Bool -> ServerStack ()
-  talk client@(Client userAgent conn) run = when run $ do
+  talk :: C.Client -> Bool -> ServerStack ()
+  talk client@(C.Client userAgent conn) run = when run $ do
     (clients, _) <- getServerContext
     msg <- recv conn
     shouldRun <- case msg of
       Nothing -> do
-        liftKatip $ K.logMsg "talk" K.ErrorS "Client disconnected abruptly"
+        liftKatip $ K.logMsg "talk" K.ErrorS $ K.ls $ "Client disconnected abruptly " ++ userAgent
         liftIO $ atomically $ do
           currentClients <- readTVar clients
           writeTVar clients $ filter ((/= userAgent) . C.getUserAgent') currentClients
         pure False
       Just m -> case m of
         WS.ControlMessage (WS.Close _ bs) -> do
-          liftKatip $ K.logMsg "talk" K.WarningS $ K.ls $ "Received close message from " ++ userAgent
+          liftKatip $ K.logMsg "talk" K.InfoS $ K.ls $ "Received close message from " ++ userAgent
           liftIO $ WS.sendClose conn bs
 
           -- Remove the client from the array
@@ -147,7 +146,7 @@ serverApp' pc = do
 
           pure True
         WS.DataMessage _ _ _ (WS.Binary _) -> do
-          liftKatip $ K.logMsg "talk" K.InfoS "Received binary message"
+          liftKatip $ K.logMsg "talk" K.ErrorS $ K.ls $ "Received binary message from " ++ userAgent ++ ", ignoring"
           pure True
 
     liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ (if shouldRun then "Continuing" else "Stopping") ++ " execution"
