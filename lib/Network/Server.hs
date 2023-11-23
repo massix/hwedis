@@ -1,25 +1,22 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Network.Server (
-  Environment,
-  MutableIndex,
+  Clients,
   RedisConnection,
+  ServerContext,
   serverApp',
   runServerStack,
-  findNextIndex,
 ) where
 
 -----------------------------------------------------
 
-import Control.Concurrent.STM (TArray, TVar, writeTVar)
+import Control.Concurrent.STM (TVar, readTVar, writeTVar)
 import Control.Exception (Exception)
 import Control.Monad (when)
+import Control.Monad.Catch (MonadCatch, MonadThrow, catch)
 import Control.Monad.Trans (MonadIO, MonadTrans, lift, liftIO)
 import Control.Monad.Trans.Maybe (MaybeT (runMaybeT))
 import Control.Monad.Trans.Reader (ReaderT (runReaderT), ask)
-import Data.Array (Array, assocs)
-import Data.Array.IArray (listArray)
-import Data.Array.MArray (getElems, writeArray)
 import qualified Data.ByteString as B
 import Data.Foldable (traverse_)
 import qualified Data.Messages as M
@@ -29,21 +26,17 @@ import qualified Katip as K
 import qualified Network.Client as C
 import qualified Network.Redis as RT
 import qualified Network.WebSockets as WS
-import Control.Monad.Catch (catch, MonadCatch, MonadThrow)
 
 -----------------------------------------------------
 
 -- | The Environment we're using is just a list of connected clients
-type Environment = TArray Int C.Client
-
--- | Get a reference to the next usable index of the array of clients
-type MutableIndex = TVar Int
+type Clients = TVar [C.Client]
 
 -- | Connection to Redis, created initially by the main but it can be modified by the heartbeat thread
 type RedisConnection = TVar R.Connection
 
 -- | The ServerContext will contain the Environment, a Mutable index and the Connection to Redis
-type ServerContext = (Environment, MutableIndex, RedisConnection)
+type ServerContext = (Clients, RedisConnection)
 
 data InternalExceptions
   = ClientDisconnected
@@ -82,42 +75,57 @@ serverApp' pc = do
   client <- liftIO $ runMaybeT (C.mkClient pc)
 
   -- Needed for forking threads
-  env@(environment, index, _) <- getServerContext
+  env@(clients, _) <- getServerContext
   logEnv <- liftKatip K.getLogEnv
 
   case client of
     Just c@(C.Client ua conn) -> do
-      currentIndex <- liftIO $ readTVarIO index
-      liftKatip $ K.logMsg "serverApp" K.InfoS $ K.ls $ "Accepted new client, user agent: " ++ ua
-      liftIO $ atomically $ writeArray environment currentIndex c
+      liftKatip $ K.logMsg "serverApp" K.InfoS $ K.ls $ "New client connected, user agent: " ++ ua
 
-      clients <- liftIO $ atomically $ getElems environment
-      liftIO $ atomically $ writeTVar index $ findNextIndex $ listArray (0, 255) clients
+      isAccepted <- liftIO $ atomically $ do
+        currentClients <- readTVar clients
+        let exists = ua `elem` (C.getUserAgent' <$> currentClients)
 
-      liftIO $ WS.withPingThread conn 30 (pure ()) $ runServerStack logEnv env (talk conn currentIndex True)
-    Nothing -> liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused"
+        if not exists
+          then do
+            writeTVar clients (c : currentClients)
+            pure True
+          else pure False
+
+      if isAccepted
+        then liftIO $ WS.withPingThread conn 30 (pure ()) $ runServerStack logEnv env (talk c True)
+        else liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused, duplicated user agent"
+    Nothing -> liftKatip $ K.logMsg "serverApp" K.ErrorS "Client refused, missing user agent"
  where
   recv :: WS.Connection -> ServerStack (Maybe WS.Message)
-  recv conn = catch (do msg <- liftIO $ WS.receive conn; pure $ Just msg) 
-                    (\e -> let _ = show (e :: WS.ConnectionException) 
-                           in pure Nothing)
+  recv conn =
+    catch
+      (do msg <- liftIO $ WS.receive conn; pure $ Just msg)
+      ( \e ->
+          let _ = show (e :: WS.ConnectionException)
+           in pure Nothing
+      )
 
-  talk :: WS.Connection -> Int -> Bool -> ServerStack ()
-  talk conn idx run = when run $ do
-    (environment, _, _) <- getServerContext
+  talk :: C.Client -> Bool -> ServerStack ()
+  talk client@(C.Client userAgent conn) run = when run $ do
+    (clients, _) <- getServerContext
     msg <- recv conn
     shouldRun <- case msg of
       Nothing -> do
-        liftKatip $ K.logMsg "talk" K.ErrorS "Client disconnected abruptly"
-        liftIO $ atomically $ writeArray environment idx (C.Client "undefined" undefined)
+        liftKatip $ K.logMsg "talk" K.ErrorS $ K.ls $ "Client disconnected abruptly " ++ userAgent
+        liftIO $ atomically $ do
+          currentClients <- readTVar clients
+          writeTVar clients $ filter ((/= userAgent) . C.getUserAgent') currentClients
         pure False
       Just m -> case m of
         WS.ControlMessage (WS.Close _ bs) -> do
-          liftKatip $ K.logMsg "talk" K.WarningS "Received close message"
+          liftKatip $ K.logMsg "talk" K.InfoS $ K.ls $ "Received close message from " ++ userAgent
           liftIO $ WS.sendClose conn bs
 
           -- Remove the client from the array
-          liftIO $ atomically $ writeArray environment idx (C.Client "undefined" undefined)
+          liftIO $ atomically $ do
+            currentClients <- readTVar clients
+            writeTVar clients $ filter ((/= userAgent) . C.getUserAgent') currentClients
           pure False
         -- \^ Stops the thread
         WS.ControlMessage (WS.Ping content) -> do
@@ -138,15 +146,15 @@ serverApp' pc = do
 
           pure True
         WS.DataMessage _ _ _ (WS.Binary _) -> do
-          liftKatip $ K.logMsg "talk" K.InfoS "Received binary message"
+          liftKatip $ K.logMsg "talk" K.ErrorS $ K.ls $ "Received binary message from " ++ userAgent ++ ", ignoring"
           pure True
 
     liftKatip $ K.logMsg "talk" K.DebugS $ K.ls $ (if shouldRun then "Continuing" else "Stopping") ++ " execution"
-    talk conn idx shouldRun
+    talk client shouldRun
 
   handleMessage :: WS.Message -> ServerStack M.Response
   handleMessage m = do
-    (_, _, tVarConn) <- getServerContext
+    (_, tVarConn) <- getServerContext
     rawConn <- liftIO $ readTVarIO tVarConn
     le <- liftKatip K.getLogEnv
     let parsedMsg = M.fromWsMessage m :: Maybe M.Request
@@ -172,7 +180,7 @@ serverApp' pc = do
 
   handleListMessage :: ServerStack M.Response
   handleListMessage = do
-    (_, _, tVarConn) <- getServerContext
+    (_, tVarConn) <- getServerContext
     rawConn <- liftIO $ readTVarIO tVarConn
     le <- liftKatip K.getLogEnv
     res <- liftIO $ RT.runRedisT rawConn le RT.allKeys
@@ -193,12 +201,7 @@ serverApp' pc = do
 
   broadcast :: WS.Message -> ServerStack ()
   broadcast msg = do
-    (environment, _, _) <- getServerContext
-    clients <- liftIO $ atomically $ getElems environment
-    let connected = filter ((/= "undefined") . C.getUserAgent') clients
-    liftKatip $ K.logMsg "broadcast" K.DebugS $ K.ls $ "Broadcasting to " ++ show (length connected) ++ " clients"
-    traverse_ (\c -> liftIO $ WS.send (C.getConnection' c) msg) connected
-
--- | Given an array of clients, find the next usable index (recycle)
-findNextIndex :: Array Int C.Client -> Int
-findNextIndex = fst . head . filter ((== "undefined") . C.getUserAgent' . snd) . assocs
+    (clients, _) <- getServerContext
+    allClients <- liftIO $ readTVarIO clients
+    liftKatip $ K.logMsg "broadcast" K.DebugS $ K.ls $ "Broadcasting to " ++ show (length allClients) ++ " clients"
+    traverse_ (\c -> liftIO $ WS.send (C.getConnection' c) msg) allClients
